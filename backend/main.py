@@ -19,3 +19,79 @@ Refresh_Token = "hCgwKCjE3MDc3NjA4MTQSpQGbG5BLJfWYEnXUVTlWfHyG7dfOIHLJAGRbl_vhgX
 
 
 
+def get_db():
+    try:
+        db = SessionLocal()
+        yield db
+    finally:
+        db.close()
+
+
+
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+
+
+@app.get("/segment")
+async def get_Segment():
+    try:
+        # Push user information to Snapchat's ad platform
+        await refreshToken()
+        headers = {
+            "Authorization": f"Bearer {Token}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.get(
+            f"{SNAPCHAT_API_BASE_URL}/adaccounts/{Ad_Account_ID}/segments",
+            headers=headers
+        )
+        response.raise_for_status()
+        decoded_response = json.loads(response.content)
+        
+        return {"message":"success",   "result":decoded_response}
+    except Exception as e:
+        handle_snapchat_exceptions(e)
+
+
+
+def handle_exceptions(e):
+    if isinstance(e, requests.exceptions.HTTPError):
+        if e.response.status_code == 401:
+            # Handle 401 Unauthorized error
+            raise HTTPException(status_code=401, detail="Unauthorized: Invalid or expired access token")
+        else:
+            # Handle other HTTP errors
+            raise HTTPException(status_code=e.response.status_code, detail=f"HTTP Error: {e}")
+    elif isinstance(e, requests.exceptions.RequestException):
+        # Handle connection errors or other issues with the request
+        raise HTTPException(status_code=500, detail=f"Error connecting to Snapchat API: {e}")
+    else:
+        # Handle other unexpected errors
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+
+
+
+
+async def refreshToken():
+    global Refresh_Token  # Use the global keyword to modify the global variable
+    global Token  # Use the global keyword to modify the global variable
+
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded"
+                }
+    data = {
+            "refresh_token": Refresh_Token, 
+            "client_id": "47157e24-831a-4a04-b9ef-b1f01a79baca", 
+            "client_secret": "cdd714e381f4898f14fb", 
+            "grant_type": "refresh_token"
+
+        }
+    response = requests.post("https://accounts.snapchat.com/login/oauth2/access_token", data=data, headers=headers)
+
+
+    decoded_response = json.loads(response.content)
+    Refresh_Token = decoded_response["refresh_token"]
+    Token = decoded_response["access_token"]
