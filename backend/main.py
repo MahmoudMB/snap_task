@@ -3,6 +3,7 @@ import json
 import requests
 from database import engine,SessionLocal
 from sqlalchemy.orm import Session
+from models import SegmentRequest, UpdateSegmentRequest, Base, User
 
 
 app = FastAPI()
@@ -54,6 +55,42 @@ async def get_Segment():
         return {"message":"success",   "result":decoded_response}
     except Exception as e:
         handle_snapchat_exceptions(e)
+
+
+
+
+@app.post("/segment")
+async def add_Segment(segment_data: SegmentRequest):
+    try:
+        await refreshToken()
+        # Push user information to Snapchat's ad platform
+        headers = {
+            "Authorization": f"Bearer {Token}",
+            "Content-Type": "application/json"
+        }
+        user_data = {
+            "segments": [{
+                "name": segment_data.name,
+                "description": segment_data.description,
+                "source_type": segment_data.source_type,
+                "retention_in_days": 180,
+                "ad_account_id": Ad_Account_ID
+            }]
+        }
+        response = requests.post(
+            f"{SNAPCHAT_API_BASE_URL}/adaccounts/{Ad_Account_ID}/segments",
+            json=user_data,
+            headers=headers
+        )
+        response.raise_for_status()
+        return {"message":"success",   "result": {}}
+
+    except Exception as e:
+        handle_snapchat_exceptions(e)
+
+
+
+
 
 
 
