@@ -1,9 +1,13 @@
-from sqlalchemy import Column, Integer, String
-from database import Base
-from enums import SourceType
-from fastapi import HTTPException, Body
-from pydantic import BaseModel  # Import BaseModel from Pydantic
-from typing import Optional  # Add this import
+from typing import Union
+from enums import SourceType, UserSchemaType
+from models import SegmentRequest, UpdateSegmentRequest, Base, User
+from fastapi import FastAPI, HTTPException, Body, Depends
+import requests
+from database import engine,SessionLocal
+from sqlalchemy.orm import Session
+import json
+from schemas import UserSchema
+
 
 class User(Base):
     __tablename__ = "users"
@@ -11,7 +15,6 @@ class User(Base):
     userId = Column(String, primary_key=True, index=True)
     schemaType = Column(String)
     segmentId = Column(String)
-
 
  
 class SegmentRequest(BaseModel):

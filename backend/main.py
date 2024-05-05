@@ -1,10 +1,13 @@
-from fastapi import FastAPI, HTTPException
-import json
+from typing import Union
+from enums import SourceType, UserSchemaType
+from models import SegmentRequest, UpdateSegmentRequest, Base, User
+from fastapi import FastAPI, HTTPException, Body, Depends
 import requests
 from database import engine,SessionLocal
 from sqlalchemy.orm import Session
-from models import SegmentRequest, UpdateSegmentRequest, Base, User
-
+from utils import normalize_and_hash_string
+import json
+from schemas import UserSchema
 
 app = FastAPI()
 Base.metadata.create_all(bind=engine)
@@ -19,13 +22,13 @@ Ad_Account_ID = "e1d6c154-b077-4037-a2e9-87fdd9a733a1"
 Refresh_Token = "hCgwKCjE3MDc3NjA4MTQSpQGbG5BLJfWYEnXUVTlWfHyG7dfOIHLJAGRbl_vhgXVIkKUBKjBQJLEE5L1jKravm-D5H2sOCXU9XmB97LMTdgH6d_Z2N6YEey7YnmMeg8y-oYr0s7vp0VXuB4pf5cYpTnxZbFPeA1Qv90b3Ir8sTo8PcyqtOUDP3bl1sRH7PphGtHnBbD1I62BB8fj5HZVF4UeVAHCiisyilDgJZPqZO_GweZTbmPo"
 
 
-
 def get_db():
     try:
         db = SessionLocal()
         yield db
     finally:
         db.close()
+
 
 
 
@@ -58,9 +61,8 @@ async def get_Segment():
 
 
 
-
 @app.post("/segment")
-async def add_Segment(segment_data: SegmentRequest):
+def add_Segment(segment_data: SegmentRequest):
     try:
         await refreshToken()
         # Push user information to Snapchat's ad platform
@@ -91,6 +93,87 @@ async def add_Segment(segment_data: SegmentRequest):
 
 
 
+@app.put("/segment/{segment_id}")
+def update_Segment(segment_id:str, segment_data: UpdateSegmentRequest):
+    try:
+        
+        await refreshToken()
+        # Push user information to Snapchat's ad platform
+        headers = {
+            "Authorization": f"Bearer {Token}",
+            "Content-Type": "application/json"
+        }
+        user_data = {
+            "segments": [{
+                "id":segment_id, 
+                "name": segment_data.name,
+                "description": segment_data.description,
+                "retention_in_days": 180,
+            }]
+        }
+        response = requests.put(
+            f"{SNAPCHAT_API_BASE_URL}/adaccounts/{Ad_Account_ID}/segments",
+            json=user_data,
+            headers=headers
+        )
+        response.raise_for_status()
+        return {"message":"success",   "result": {}}
+    except Exception as e:
+        handle_snapchat_exceptions(e)
+
+
+@app.post("/segment/{segment_id}/user")
+def add_Segment_User(segment_id:str, user_id: list[str], user_type: UserSchemaType, db: Session = Depends(get_db)):
+    try:
+        await refreshToken()
+        # user identifiers MUST BE NORMALIZED AND SHA-256 HASHED before being transmitted.
+        
+        # Normalize and hash user IDs
+        normalized_user_ids = [normalize_and_hash_string(uid) for uid in user_id]
+
+        # Push user information to Snapchat's ad platform
+        headers = {
+            "Authorization": f"Bearer {Token}",
+            "Content-Type": "application/json"
+        }
+        user_data = {"users":[{ "schema":[f"{user_type.value}"],  "data": [[uid] for uid in normalized_user_ids]}]}
+        print(user_data)
+        response = requests.post(
+            f"{SNAPCHAT_API_BASE_URL}/segments/{segment_id}/users",
+            json=user_data,
+            headers=headers
+        )
+        print(response.content)
+
+        response.raise_for_status()
+        for user in user_id:
+            user = User(userId=user, schemaType=user_type.value, segmentId=segment_id)
+            db.add(user)
+        db.commit()
+        db.refresh(user)
+        return {"message":"success",   "result": {}}
+    except Exception as e:
+        handle_snapchat_exceptions(e)
+
+@app.get("/segment/{segment_id}/user")
+def get_Segment_User(segment_id:str, db: Session = Depends(get_db)):
+    try:
+        await refreshToken()
+        # Push user information to Snapchat's ad platform
+        headers = {
+            "Authorization": f"Bearer {Token}",
+            "Content-Type": "application/json"
+        }
+   
+
+        users = db.query(User).filter(User.segmentId == segment_id).all()
+
+        return {"message":"success",   "result": users}
+    except Exception as e:
+        handle_snapchat_exceptions(e)
+
+
+
 
 
 
@@ -108,7 +191,6 @@ def handle_exceptions(e):
     else:
         # Handle other unexpected errors
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
-
 
 
 
@@ -132,3 +214,4 @@ async def refreshToken():
     decoded_response = json.loads(response.content)
     Refresh_Token = decoded_response["refresh_token"]
     Token = decoded_response["access_token"]
+    print(decoded_response)
